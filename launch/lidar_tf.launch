@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+
+<launch>
+        <node pkg="rosbag" type="play" name="rosbag_play" args="--clock /media/nico/D/dataset/autoCarExpData/20160802/2016-08-02-16-28-03.bag --pause"/>
+        <node pkg ="tf2_ros" type="static_transform_publisher" name="vehicle_v64" args="0 0 0.2 0 0 0 vehicle velodyne64"/>
+        <node pkg ="tf2_ros" type="static_transform_publisher" name="v64_v32" args="0.583355 -0.032524 0.330256 0.00572 0.439205 -0.005178 velodyne64 velodyne32"/>
+        <node pkg="lidar_tf" type="lidar_tf_node" name="lidar_tf" output="screen">
+                <param name="voxel_grid" type="double" value="0.1"/>
+                <param name="cut_min" type="double" value="2"/>
+                <param name="cut_max" type="double" value="10.0"/>
+		<param name="subscribe" type="string" value="/velodyne64_driver/velodyne64_packet"/>
+		<param name="advertise" type="string" value="/cloud"/>
+		<param name="filter_radius" type="double" value="0.3" />
+	</node>
+        <node pkg="rviz" type="rviz" name="rviz" args="-d $(find lidar_tf)/lidar_tf.rviz"/>
+</launch>
