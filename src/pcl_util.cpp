@@ -39,14 +39,58 @@ void subPlane(Cloud::Ptr cloud_in, Cloud::Ptr cloud_out,
     *cloud_out = *cloud;
     return;
 }
-void subrectangle(Cloud::Ptr cloud_in, Cloud::Ptr cloud_out,
-                 double cut_max_x, double cut_min_x,double cut_max_y, double cut_min_y)
+
+void cutPC32(Cloud::Ptr cloud_in,
+             Cloud::Ptr cloud_out)
 {
     Cloud::Ptr cloud(new Cloud);
     for (size_t i = 0; i < cloud_in->points.size(); i++)
     {
+        if(cloud_in->points[i].x <= 2 &&
+                cloud_in->points[i].x >= 0 &&
+                fabs(cloud_in->points[i].y ) <= 1)
+            continue;
+
+        cloud->push_back(cloud_in->points[i]);
+
+    }
+    *cloud_out = *cloud;
+    return;
+}
+
+void cutPC64(Cloud::Ptr cloud_in,
+             Cloud::Ptr cloud_out)
+{
+    Cloud::Ptr cloud(new Cloud);
+    for (size_t i = 0; i < cloud_in->points.size(); i++)
+    {
+        if(cloud_in->points[i].x <= 4 &&
+                cloud_in->points[i].x >= 0
+                && fabs(cloud_in->points[i].y ) <= 1)
+            continue;
+
+        cloud->push_back(cloud_in->points[i]);
+
+    }
+    *cloud_out = *cloud;
+    return;
+}
+
+
+void subrectangle(Cloud::Ptr cloud_in,
+                  Cloud::Ptr cloud_out,
+                  double cut_max_x,
+                  double cut_min_x,
+                  double cut_max_y,
+                  double cut_min_y,
+                  double cut_height)
+{
+    Cloud::Ptr cloud(new Cloud);
+    for (size_t i = 0; i < cloud_in->points.size(); i++)
+    {
+
         if(cloud_in->points[i].x >= cut_min_x&&cloud_in->points[i].x <= cut_max_x&&
-                cloud_in->points[i].y >= cut_min_y&&cloud_in->points[i].y <= cut_max_y)
+                cloud_in->points[i].y >= cut_min_y&&cloud_in->points[i].y <= cut_max_y&&cloud_in->points[i].z<cut_height)
         {
             cloud->push_back(cloud_in->points[i]);
         }
@@ -55,20 +99,27 @@ void subrectangle(Cloud::Ptr cloud_in, Cloud::Ptr cloud_out,
     return;
 }
 
-void GetPlane(Cloud::Ptr cloud_in,
+bool GetPlane(Cloud::Ptr cloud_in,
               pcl::ModelCoefficients::Ptr coeffs,
-              pcl::PointIndices::Ptr indices)
+              pcl::PointIndices::Ptr indices,
+              double threshold)
 {
+
+    if (cloud_in->size() <= 20)
+        return EXIT_FAILURE;
 
     pcl::SACSegmentation<pcl::PointXYZ> segmentation;
     segmentation.setInputCloud(cloud_in);
     segmentation.setModelType(pcl::SACMODEL_PLANE);
     segmentation.setMethodType(pcl::SAC_RANSAC);
-    segmentation.setDistanceThreshold(0.1);
+    segmentation.setDistanceThreshold(threshold);
     segmentation.setOptimizeCoefficients(true);
     segmentation.segment(*indices,*coeffs);
 
-    return;
+    if (indices->indices.size() <= 3)
+        return EXIT_FAILURE;
+    else
+        return EXIT_SUCCESS;
 }
 
 //----------------------------------------------------------------------------//
@@ -103,63 +154,45 @@ void VoxelFilter(Cloud::Ptr cloud_in, Cloud::Ptr cloud_out, double leaf_size)
 
     return;
 }
-void Project(Cloud::Ptr cloud_in,
-             Cloud::Ptr cloudRoad,
-             Cloud::Ptr cloudObject,
-             ColorCloud::Ptr cloudSeg,
-             ColorCloud::Ptr cloudProject,
-             pcl::ModelCoefficients::Ptr coeffs)
+void RemoveGround1(Cloud::Ptr cloud_in,
+             Cloud::Ptr cloud_out,
+             pcl::ModelCoefficients::Ptr coeffs,
+             double filter_ground_range)
 {
-
+    Cloud::Ptr cloudObject(new Cloud);
     for (size_t i = 0; i < cloud_in->size(); ++i)
     {
-        PointCT rgb_point, project_point;
-        PointT point;
+        PointT rgb_point;
+
         rgb_point.x = cloud_in->points[i].x;
         rgb_point.y = cloud_in->points[i].y;
         rgb_point.z = cloud_in->points[i].z;
 
-        point.x = rgb_point.x;
-        point.y = rgb_point.y;
-        point.z = rgb_point.z;
-
-        // cut the distance that we don't need
-        double distance = sqrt(pow(rgb_point.x,2) + pow(rgb_point.y,2));
-        if( distance > 30 || (distance < 2 && cloud_in->points[i].z > -2)) continue;
+//        // cut the distance that we don't need
+//        double distance = sqrt(pow(rgb_point.x,2) + pow(rgb_point.y,2));
+//        if( distance > 30 || (distance < 2 && cloud_in->points[i].z > -2)) continue;
 
         double height = cloud_in->points[i].x * coeffs->values[0] +
                       cloud_in->points[i].y * coeffs->values[1] +
                       cloud_in->points[i].z * coeffs->values[2] +
                       coeffs->values[3];
-        project_point.x = rgb_point.x;
-        project_point.y = rgb_point.y;
-        project_point.z = rgb_point.z;
 
-
-        if (height <= 0.5)
+        if (height >= filter_ground_range)
         {
-            rgb_point.r = 0;
-            rgb_point.g = 200;
-            rgb_point.b = 0;
-            project_point.r = 0;
-            project_point.g = 200;
-            project_point.b = 0;
-            cloudRoad->push_back(point);
+//            rgb_point.r = 200;
+//            rgb_point.g = 0;
+//            rgb_point.b = 0;
+            cloudObject->push_back(rgb_point);
         }
-        else
+        else if (height<=-filter_ground_range)
         {
-            rgb_point.r = 200;
-            rgb_point.g = 0;
-            rgb_point.b = 0;
-            project_point.r = 200;
-            project_point.g = 0;
-            project_point.b = 0;
-            if (height > 1) cloudObject->push_back(point);
+//            rgb_point.r = 0;
+//            rgb_point.g = 0;
+//            rgb_point.b = 200;
+            cloudObject->push_back(rgb_point);
         }
-        cloudSeg->push_back(rgb_point);
-        cloudProject->push_back(project_point);
     }
-
+    *cloud_out =*cloudObject;
     return;
 }
 
@@ -176,7 +209,7 @@ void FillIn(ColorCloud::Ptr cloudSeg, ColorCloud::Ptr cloudProject,
        point.y = 8 * (rand () / (RAND_MAX + 1.0f)-0.5);
 
        double distance = sqrt(pow(point.x, 2) + pow(point.y, 2));
-       if (distance > 4 || point.x > 2) continue;
+//       if (distance > 4 || point.x > 2) continue;
 
        point.z = -(point.x * coeffs->values[0] +
                           point.y * coeffs->values[1] +
@@ -206,6 +239,7 @@ void FillIn(ColorCloud::Ptr cloudSeg, ColorCloud::Ptr cloudProject,
 
 void RoadEstimation(ColorCloud::Ptr cloudProject, Cloud::Ptr outCloud)
 {
+    //std::cerr<<"cloudProject size: "<<cloudProject->size()<<std::endl;
     Cloud::Ptr cloud (new Cloud);
     pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree_search;
     kdtree_search.setInputCloud(cloudProject);
@@ -243,6 +277,162 @@ void RoadEstimation(ColorCloud::Ptr cloudProject, Cloud::Ptr outCloud)
     }
 
     *outCloud = *cloud;
+
+    return;
+}
+
+void RemoveGround(Cloud::Ptr cloudin , pcl::PointIndices::Ptr indices ,Cloud::Ptr cloud_filtered_ground ,Cloud::Ptr cloud_ground ,ColorCloud::Ptr cloud_filtered_ground_rgb, ColorCloud::Ptr cloud_ground_rgb )
+{
+    pcl::ExtractIndices<pcl::PointXYZ> extract_filtered_ground;
+    extract_filtered_ground.setInputCloud (cloudin);
+    extract_filtered_ground.setIndices (indices);
+    extract_filtered_ground.setNegative (true);
+    extract_filtered_ground.filter (*cloud_filtered_ground);
+
+    for(size_t i = 0; i < cloud_filtered_ground->points.size(); i ++)
+    {
+        pcl::PointXYZRGB point;
+        point.x = cloud_filtered_ground->points[i].x;
+        point.y = cloud_filtered_ground->points[i].y;
+        point.z = cloud_filtered_ground->points[i].z;
+
+        point.r = 0;
+        point.g = 0;
+        point.b = 200;
+        cloud_filtered_ground_rgb->push_back(point);
+    }
+
+    extract_filtered_ground.setNegative (false);
+    extract_filtered_ground.filter (*cloud_ground);
+    for(size_t i = 0; i < cloud_ground->points.size(); i ++)
+    {
+        pcl::PointXYZRGB point;
+        point.x = cloud_ground->points[i].x;
+        point.y = cloud_ground->points[i].y;
+        point.z = cloud_ground->points[i].z;
+
+        point.r = 0;
+        point.g = 200;
+        point.b = 0;
+        cloud_ground_rgb->push_back(point);
+    }
+}
+
+
+void euclidenCluster(
+        Cloud::Ptr cloudin,
+        ColorCloud::Ptr cloudout,
+        double ClusterTolerance,
+        int MinClusterSize,
+        int MaxClusterSize,
+        visualization_msgs::Marker::Ptr marker,
+        geometry_msgs::PoseArray::Ptr centroids,
+        pcl::ModelCoefficients::Ptr coeffs)
+{
+    ColorCloud::Ptr cloud(new ColorCloud);
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+    tree->setInputCloud (cloudin);
+    std::vector<pcl::PointIndices> clusters;
+    pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+    ec.setClusterTolerance (ClusterTolerance);
+    ec.setMinClusterSize (MinClusterSize);
+    ec.setMaxClusterSize (MaxClusterSize);
+    ec.setSearchMethod (tree);
+    ec.setInputCloud (cloudin);
+    ec.extract (clusters);
+    int j = 0,k=0;
+
+      for (std::vector<pcl::PointIndices>::const_iterator it = clusters.begin (); it != clusters.end (); ++it)
+      {
+          ColorCloud::Ptr cloud_cluster_temp(new ColorCloud);
+          geometry_msgs::Pose centroid_pose;
+          geometry_msgs::Point centroid_point;
+        for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit)
+        {
+            pcl::PointXYZRGB point;
+            point.x = cloudin->points[*pit].x;
+            point.y = cloudin->points[*pit].y;
+            point.z = cloudin->points[*pit].z;
+
+            cloud_cluster_temp->points.push_back(point);
+            centroid_point.x += cloudin->points[*pit].x;
+            centroid_point.y += cloudin->points[*pit].y;
+            centroid_point.z += cloudin->points[*pit].z;
+        }
+
+        centroid_point.x /= it->indices.size();
+        centroid_point.y /= it->indices.size();
+        centroid_point.z /= it->indices.size();
+
+        j++;
+        k++;
+        *cloud = *cloud + *cloud_cluster_temp;
+
+        centroid_pose.position = centroid_point;
+        marker->points.push_back(centroid_point);
+        centroids->poses.push_back(centroid_pose);
+      }
+
+    *cloudout = *cloud;
+
+}
+void Project(Cloud::Ptr cloud_in,
+             Cloud::Ptr cloudRoad,
+             Cloud::Ptr cloudObject,
+             ColorCloud::Ptr cloudSeg,
+             ColorCloud::Ptr cloudProject,
+             pcl::ModelCoefficients::Ptr coeffs,
+	     double filterGroundRange)
+{
+
+    for (size_t i = 0; i < cloud_in->size(); ++i)
+    {
+        PointCT rgb_point, project_point;
+        PointT point;
+        rgb_point.x = cloud_in->points[i].x;
+        rgb_point.y = cloud_in->points[i].y;
+        rgb_point.z = cloud_in->points[i].z;
+
+        point.x = rgb_point.x;
+        point.y = rgb_point.y;
+        point.z = rgb_point.z;
+
+        // cut the distance that we don't need
+        double distance = sqrt(pow(rgb_point.x,2) + pow(rgb_point.y,2));
+        if( distance > 30 || (distance < 2 && cloud_in->points[i].z > -2)) continue;
+
+        double height = cloud_in->points[i].x * coeffs->values[0] +
+                      cloud_in->points[i].y * coeffs->values[1] +
+                      cloud_in->points[i].z * coeffs->values[2] +
+                      coeffs->values[3];
+        project_point.x = rgb_point.x;
+        project_point.y = rgb_point.y;
+        project_point.z = rgb_point.z;
+
+
+        if (height <= filterGroundRange)
+        {
+            rgb_point.r = 0;
+            rgb_point.g = 200;
+            rgb_point.b = 0;
+            project_point.r = 0;
+            project_point.g = 200;
+            project_point.b = 0;
+            cloudRoad->push_back(point);
+        }
+        else
+        {
+            rgb_point.r = 200;
+            rgb_point.g = 0;
+            rgb_point.b = 0;
+            project_point.r = 200;
+            project_point.g = 0;
+            project_point.b = 0;
+            if (height > 1) cloudObject->push_back(point);
+        }
+        cloudSeg->push_back(rgb_point);
+        cloudProject->push_back(project_point);
+    }
 
     return;
 }
